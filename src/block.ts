@@ -21,7 +21,7 @@ export default class Block {
 	}
 
 	computeHash(): string {
-		return SHA256(this.index + this.preceedingHash + this.timestamp + JSON.stringify(this.data) + this.nonce).toString()
+		return SHA256(this.index + this.preceedingHash + this.timestamp.toLocaleString('en-US', { timeZone: 'UTC' }) + JSON.stringify(this.data) + this.nonce).toString()
 	}
 
 	proofOfWork(diff: number) {

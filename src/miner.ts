@@ -1,5 +1,5 @@
 import Block from './block'
-import { MinerConfig } from './config'
+import { MinerConfig, defaultConfig } from './config'
 import got from 'got'
 import { EventEmitter } from 'events'
 
@@ -44,10 +44,13 @@ export default class Miner extends EventEmitter {
 	private diff: number = 4
 	private cfg: MinerConfig
 
-	constructor(cfg: MinerConfig) {
+	constructor(cfg: MinerConfig = defaultConfig) {
 		super()
 
-		this.cfg = cfg
+		this.cfg = {
+			...defaultConfig,
+			...cfg
+		}
 	}
 
 	obtainLatestBlock(): Block {
@@ -58,6 +61,7 @@ export default class Miner extends EventEmitter {
 			count: 1,
 			startDate: new Date()
 		}): Promise<number> {
+		if (!options.startDate) options.startDate = new Date()
 		if (!options.endDate) options.endDate = new Date(options.startDate.getTime() + options.count)
 
 		let currTime = options.startDate.getTime()
@@ -81,6 +85,7 @@ export default class Miner extends EventEmitter {
 	async init(): Promise<void> {
 		const resp: ResponseInfo = await this.request('/info')
 		const block = new Block(this, resp.firstBlock.index, new Date(resp.firstBlock.timestamp), 'Initial block in chain', '0')
+		block.hash = block.computeHash()
 		if (block.hash !== resp.firstBlock.hash) throw new Error('Failed to recreate genesis block')
 		this.blockchain.push(block)
 	}
@@ -98,55 +103,37 @@ export default class Miner extends EventEmitter {
 	}
 
 	async request(path: string, options?: any): Promise<any> {
-		const inst = got.extend({
-			hooks: {
-				beforeRequest: [
-					(options) => {
-						const entry = REQ_MAP[path.replace('/', '')]
-						if (!entry) {
-							throw new Error(`Invalid request path: ${path}`)
-						}
+		if (path.startsWith('/')) path = path.substring(1)
 
-						options.prefixUrl = this.cfg.instance
-						options.method = entry.method
-						options.responseType = 'json'
-
-						let json = options.json || {}
-						if (entry.auth === true) {
-							if (!this.cfg.auth) {
-								throw new Error('Authentication options must be set')
-							}
-
-							json = {
-								...json,
-								id: this.cfg.auth.id,
-								key: this.cfg.auth.key
-							}
-						}
-						options.json = json
-					}
-				]
-			}
-		})
-
-		const entry = REQ_MAP[path.replace('/', '')]
+		const entry = REQ_MAP[path]
 		if (!entry) {
-			throw new Error(`Invalid request path: ${path}`)
+			throw new Error(`Invalid request path: /${path}`)
 		}
 		try {
-				const resp = await inst<any>(path, options)
+				let json = entry.method === 'POST' ? (options.json || {}) : undefined
+				if (json && entry.auth) json = {
+					...json,
+					id: this.cfg.auth.id,
+					key: this.cfg.auth.key
+				}
+				const resp = await got[entry.method.toLowerCase()]<any>(`${this.cfg.instance}/${path}`, {
+					...options,
+					responseType: 'json',
+					json
+				})
 
 				if (resp.body.type !== entry.responseStatus) {
 					throw new Error('Invalid response type')
 				}
 
-				return resp.body
+				return resp.body.data
 		} catch (err) {
 			const { response } = err
 
 			if (response && response.body && response.body.status && response.body.type !== entry.responseStatus) {
 				err.name = 'MonkeyFlipHTTPError'
 				err.message = response.body.detail
+				console.log(response.body)
 			}
 
 			throw err
