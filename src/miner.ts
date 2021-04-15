@@ -133,7 +133,6 @@ export default class Miner extends EventEmitter {
 			if (response && response.body && response.body.status && response.body.type !== entry.responseStatus) {
 				err.name = 'MonkeyFlipHTTPError'
 				err.message = response.body.detail
-				console.log(response.body)
 			}
 
 			throw err
